@@ -1,0 +1,208 @@
+---
+title: "Vacas ordenhadas no Brasil"
+description: ""
+author script: 
+  - name: "Ítalo Marques-Monteiro"
+    github: https://github.com/italomarquesmonteiro
+    kaggle: https://www.kaggle.com/talomarquesmonteiro
+    linkedin: linkedin.com/in/ítalo-monteiro-0b2516144
+    lattes: http://lattes.cnpq.br/7174985368517137
+    orcid_id: https://orcid.org/0000-0003-4367-1034
+    affiliation: Anhanguera College  
+        - Department: Veterinary Medicine
+date: "2023-05-26"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+ 
+   *package* [`{tidyverse}`](https://www.tidyverse.org) possui um ecossistema de packages:
+                           ->[{`ggplot2`}](https://ggplot2.tidyverse.org/).
+                            ->[{`tibble`}](https://tibble.tidyverse.org/).
+                             ->[{`tidyr`}](https://tidyr.tidyverse.org/).
+                              ->[{`dplyr`}](https://dplyr.tidyverse.org/).
+                               ->[{`readr`}](https://readr.tidyverse.org/).
+                                ->[{`purrr`}](https://purrr.tidyverse.org/).
+                                 ->[{`forcats`}](https://forcats.tidyverse.org/).
+   *package* [{`geobr`}](https://github.com/ipeaGIT/geobr). Tem fácil acesso a conjuntos de dados espaciais oficiais do Brasil como objetos 'sf' em R. O pacote inclui uma ampla gama de dados geoespaciais disponíveis em várias escalas geográficas e por vários anos com atributos harmonizados, projeção e topologia fixa.
+                 - Dados do Instituto Brasileiro de Geografia e Estatística[`IBGE`](https://concla.ibge.gov.br/classificacoes/por-tema/codigo-de-areas/codigo-de-areas)
+
+```{r} 
+library(tidyverse)
+library(geobr)
+```
+
+
+* Considera-se `ordenha`, o ato de realizar a extração do leite da glândula mamária, 
+podendo ser feita de forma manual quando realizada pelo ordenhador e mecânica
+quando for utilizada ordenhadeira.[{`Embrapa`}](https://ainfo.cnptia.embrapa.br/digital/bitstream/item/24719/1/cot319-ordenhadavacaleiteira.pdf)
+
+* dados originais [{`IBGE`}](https://ibge.gov.br)
+ ## tabela [{`SIDRA`}](https://sidra.ibge.gov.br/pesquisa/ppm/tabelas/brasil/2021)
+```{r}
+df <- readr::read_csv("C:/Users/italo/Downloads/tabela94.csv",
+    skip = 2,
+        col_types = "iccii",
+            locale = locale(decimal_mark = ",",
+                grouping_mark = ".")) |>
+    dplyr::glimpse() |>
+    tibble::view()
+```
+
+
+
+* Olhando o final da tibble, tem informações e legendas sobre os dados, uso:`slice` para removê-lo.
+
+[{`slice`}](https://dplyr.tidyverse.org/reference/slice.html)
+        - permite indexar linhas por seus locais (inteiros). 
+        - Ele permite que você selecione, remova e duplique linhas. 
+* Ele é acompanhado por vários auxiliares para casos de uso comuns:
+                    -> `slice_head()`e `slice_tail()`selecione a primeira ou a última linha.
+                    -> `slice_sample()`seleciona linhas aleatoriamente.
+                    -> `slice_min()`e `slice_max()`selecione as linhas com os valores mais altos 
+                                                    ou mais baixos de uma variável
+```{r}
+df <- df |>
+    dplyr::slice(-c(5570:5581))
+
+df |>
+    tibble::view()
+```
+
+
+```{r}
+df_temp <- df |>
+    dplyr::rename(id_municipio = "Cód.")|>
+    dplyr::select(id_municipio, `2020`, `2021`) |>
+    tidyr::pivot_longer(
+        !id_municipio,
+            names_to = "ano",
+                values_to = "quantidade_animais") |>
+    dplyr::arrange(ano)
+df_temp |>
+    tibble::view()
+```
+
+
+
+* Downloads dos dados espaciais do Brasil `geobr`
+e `join` com dados de vacas ordenhas no Brasil
+```{r}
+municipio <- geobr::read_municipality(code_muni = "all", year = 2020) |>
+    dplyr::rename(id_municipio = code_muni) |>
+    dplyr::glimpse() |>
+    dplyr::left_join(df_temp) |>
+    dplyr::glimpse() |>
+    dplyr::arrange(ano) |>
+    tibble::view()
+```
+
+
+```{r}
+ordenha <- municipio
+ordenha |>
+    tibble::view()
+```
+
+```{r}
+ordenha_br <- ordenha |>
+    dplyr::filter(ano == 2021) |>
+    dplyr::mutate(
+        vacas_ordenhadas = cut(
+            quantidade_animais,
+                breaks = c(
+                    0, 500, 1000, 10000, 15000, 30000, 45000, 55000, 60000),
+                    labels = c("< 500", "500-1.000", "1.000-10.000",
+                "10.000-20.000", "20.000-30.000", "30.000-40.000",
+            "40.000-50.000", "50.000-60.000"
+                    )
+        )
+    ) |>
+    ggplot2::ggplot() +
+    geom_sf(aes(fill = factor(vacas_ordenhadas))) +
+    scale_fill_viridis_d() +
+    theme(legend.position = c(0.25, 0.25),
+    panel.grid.major = element_line(colour = "gray95"),
+    panel.background = element_rect(fill = "gray95"),
+    legend.background = element_rect(
+        fill = "grey95", colour = "gray95", size = 1)) +
+    labs(
+        fill = "Número de vacas",
+        x = "Longitude",
+        y = "Latitude") +
+    annotate("text", x = -51, y = 6.5, color = "gray30", size = 10,
+        label = "Vacas ordenhadas no Brasil", family = "Arial Black") +
+    annotate("text", x = -36, y = -25, color = "gray40", size = 5,
+        label = "Pesquisa pecuária municipal (2021)") +
+    annotate("text", x = -36, y = -30,
+    label = "Source: IBGE [open data(2023)]
+    by Ítalo Monteiro" , color = "gray50") +
+    ggspatial::annotation_scale(
+      height = unit(0.2, "cm"),
+      pad_x = unit(17, "cm"),
+      pad_y = unit(0.5, "cm")) +
+    ggspatial::annotation_north_arrow(
+      width = unit(0.7, "cm"),
+      height = unit(0.9, "cm"),
+      pad_x = unit(19, "cm"),
+      pad_y = unit(1, "cm"))
+ordenha_br
+```
+
+```{r}
+ggplot2::ggsave(
+"C:/Users/italo/OneDrive/Área de Trabalho/GitHub/vacas_ordenhadas/Images/ordenha_br.png",
+    plot = ordenha_br,
+        dpi = 1200)
+```
+
+
+```{r}
+ordenha_rs <- ordenha |>
+    dplyr::filter(ano == 2021, abbrev_state == "RS") |>
+    dplyr::mutate(
+        vacas_ordenhadas_rs = cut(
+            quantidade_animais,
+                breaks = c(0, 500, 100, 2500, 5000, 7500, 10000, 12500),
+            labels = c("< 100", "100-1.000", "1.000-3.000", "3.000-5.000",
+        "5.000-8.000", "8.000-10.000", "10.000-13.000")
+        )
+    ) |>
+    ggplot2::ggplot() +
+    geom_sf(aes(fill = factor(vacas_ordenhadas_rs))) +
+    scale_fill_viridis_d() +
+    theme(legend.position = c(0.2, 0.2),
+    panel.grid.major = element_line(colour = "gray95"),
+    panel.background = element_rect(fill = "gray95"),
+    legend.background = element_rect(
+        fill = "grey95", colour = "gray95", size = 1)) +
+    labs(
+        fill = "Número de animais",
+        x = "Longitude",
+        y = "Latitude") +
+    annotate("text", x = -54, y = -27, color = "gray30", size = 8,
+        label = "Vacas ordenhadas no Rio Grande do Sul - BR") +
+    annotate("text", x = -50.8, y = -32.5, color = "gray40", size = 5,
+        label = "Pesquisa pecuária municipal (2021)") +
+    annotate("text", x = -51, y = -33,
+    label = "Source: IBGE [open data(2023)]
+    by Ítalo Monteiro" , color = "gray50") +
+    ggspatial::annotation_scale(
+      height = unit(0.2, "cm"),
+      pad_x = unit(15, "cm"),
+      pad_y = unit(0.5, "cm")) +
+    ggspatial::annotation_north_arrow(
+      width = unit(0.7, "cm"),
+      height = unit(0.9, "cm"),
+      pad_x = unit(17.5, "cm"),
+      pad_y = unit(1, "cm"))
+ordenha_rs
+```
+
+```{r}
+ggplot2::ggsave(
+ "C:/Users/italo/OneDrive/Área de Trabalho/GitHub/vacas_ordenhadas/Images/ordenha_rs.png",
+    plot = ordenha_rs,
+        dpi = 1200)
+```
